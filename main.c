@@ -6,6 +6,7 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <inttypes.h>
 #include <string.h>
 #include <malloc.h>
@@ -13,30 +14,54 @@
 #include "sha1.h"
 
 //for c2w basic verification
-static uint8_t imghdr[4] = { 0xEF, 0xA2, 0x82, 0xD9 };
-static uint8_t elfhdr[4] = { 0x7F, 0x45, 0x4C, 0x46 };
+static const uint8_t imghdr[4] = { 0xEF, 0xA2, 0x82, 0xD9 };
+static const uint8_t elfhdr[4] = { 0x7F, 0x45, 0x4C, 0x46 };
 //patch for LT_COMPAT_MEMCTRL_STATE (toggles between 3x and 5x ppc multiplier)
-static uint8_t memctrl_ori[8]   = { 0xE3, 0x82, 0x20, 0x20, 0xE5, 0x84, 0x25, 0xB0 };
-static uint8_t memctrl_patch[8] = { 0xE3, 0xC2, 0x20, 0x20, 0xE5, 0x84, 0x25, 0xB0 };
+static const uint8_t memctrl_ori[8]   = { 0xE3, 0x82, 0x20, 0x20, 0xE5, 0x84, 0x25, 0xB0 };
+static const uint8_t memctrl_patch[8] = { 0xE3, 0xC2, 0x20, 0x20, 0xE5, 0x84, 0x25, 0xB0 };
 //patch for LT_SYSPROT (unlocks ppc multiplier)
-static uint8_t sysprot_ori[8]   = { 0xE3, 0x83, 0x30, 0x99, 0xE5, 0x81, 0x35, 0x14 };
-static uint8_t sysprot_patch[8] = { 0xE3, 0x83, 0x30, 0x9D, 0xE5, 0x81, 0x35, 0x14 };
+static const uint8_t sysprot_ori[8]   = { 0xE3, 0x83, 0x30, 0x99, 0xE5, 0x81, 0x35, 0x14 };
+static const uint8_t sysprot_patch[8] = { 0xE3, 0x83, 0x30, 0x9D, 0xE5, 0x81, 0x35, 0x14 };
+//patch for LT_IOP2X (toggles between 1x and 2x arm multiplier)
+static const uint8_t iop2x_ori[8]   = { 0xE1, 0x94, 0x40, 0x00, 0x1A, 0xFF, 0xFF, 0xBD };
+static const uint8_t iop2x_patch[8] = { 0xE2, 0x8D, 0xD0, 0x10, 0xE8, 0xBD, 0x8F, 0xF0 };
+
+static bool confirm = true;
+
+static void waitforenter(void)
+{
+	if(confirm)
+	{
+		puts("Press enter to exit");
+		getc(stdin);
+	}
+}
 
 static void printerr(char *msg)
 {
 	puts(msg);
-	puts("Press enter to exit");
-	getc(stdin);
+	waitforenter();
 }
 
-int main()
+static void printusage(void)
 {
-	puts("cafe2wii Patcher v1.0 by FIX94");
+	puts("Make sure starbuck_key.txt and c2w.img are in the same folder as c2w_patcher.");
+	puts("Usage: c2w_patcher <-nc>");
+	puts("-nc - Dont wait for enter press on error/exit");
+	waitforenter();
+}
+
+int main(int argc, char *argv[])
+{
+	puts("cafe2wii Patcher v1.1 by FIX94");
+	if(argc > 1 && memcmp(argv[1],"-nc",4) == 0)
+		confirm = false;
 	//first get the ancast key thats required
 	FILE *f = fopen("starbuck_key.txt","rb");
 	if(!f)
 	{
-		printerr("Unable to open starbuck_key.txt!");
+		puts("Unable to open starbuck_key.txt!");
+		printusage();
 		return -1;
 	}
 	fseek(f,0,SEEK_END);
@@ -53,7 +78,7 @@ int main()
 	fclose(f);
 	//parse string buffer to hex buffer
 	uint8_t key[0x10];
-	int i;
+	size_t i;
 	for(i = 0; i < 0x10; i++)
 		sscanf(buf+(i<<1),"%02x",(uint32_t*)&key[i]);
 	puts("Read in key");
@@ -61,7 +86,8 @@ int main()
 	f = fopen("c2w.img","rb");
 	if(!f)
 	{
-		printerr("Unable to open c2w.img!");
+		puts("Unable to open c2w.img!");
+		printusage();
 		return -3;
 	}
 	fseek(f,0,SEEK_END);
@@ -109,6 +135,12 @@ int main()
 			memcpy(decbuf+i,sysprot_patch,sizeof(sysprot_patch));
 			cnt++; p|=2;
 		}
+		else if(memcmp(decbuf+i,iop2x_ori,sizeof(iop2x_ori)) == 0)
+		{
+			printf("Patched LT_IOP2X at %x\n", i);
+			memcpy(decbuf+i,iop2x_patch,sizeof(iop2x_patch));
+			cnt++; p|=2;
+		}
 	}
 	if(cnt != 2 || p != 3)
 		puts("WARNING: Did not apply c2w.img patches as expected!");
@@ -139,7 +171,6 @@ int main()
 	fwrite(encbuf,1,fsize,f);
 	fclose(f);
 	puts("All Done!");
-	puts("Press enter to exit");
-	getc(stdin);
+	waitforenter();
 	return 0;
 }
