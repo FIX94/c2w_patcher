@@ -27,6 +27,7 @@ static const uint8_t iop2x_ori[8]   = { 0xE1, 0x94, 0x40, 0x00, 0x1A, 0xFF, 0xFF
 static const uint8_t iop2x_patch[8] = { 0xE2, 0x8D, 0xD0, 0x10, 0xE8, 0xBD, 0x8F, 0xF0 };
 
 static bool confirm = true;
+static bool doIOP2Xpatch = false;
 
 static void waitforenter(void)
 {
@@ -46,16 +47,23 @@ static void printerr(char *msg)
 static void printusage(void)
 {
 	puts("Make sure starbuck_key.txt and c2w.img are in the same folder as c2w_patcher.");
-	puts("Usage: c2w_patcher <-nc>");
+	puts("Usage: c2w_patcher <-nc> <-iop2x>");
 	puts("-nc - Dont wait for enter press on error/exit");
+	puts("-iop2x - Experimental, set bus and ARM clock to WiiU speed as well, only use this if you know what you're doing");
 	waitforenter();
 }
 
 int main(int argc, char *argv[])
 {
-	puts("cafe2wii Patcher v1.1 by FIX94");
-	if(argc > 1 && memcmp(argv[1],"-nc",4) == 0)
-		confirm = false;
+	puts("cafe2wii Patcher v1.2 by FIX94");
+	int argPos;
+	for(argPos = 1; argPos < argc; argPos++)
+	{
+		if(memcmp(argv[argPos],"-nc",4) == 0)
+			confirm = false;
+		if(memcmp(argv[argPos],"-iop2x",6) == 0)
+			doIOP2Xpatch = true;
+	}
 	//first get the ancast key thats required
 	FILE *f = fopen("starbuck_key.txt","rb");
 	if(!f)
@@ -135,14 +143,14 @@ int main(int argc, char *argv[])
 			memcpy(decbuf+i,sysprot_patch,sizeof(sysprot_patch));
 			cnt++; p|=2;
 		}
-		else if(memcmp(decbuf+i,iop2x_ori,sizeof(iop2x_ori)) == 0)
+		else if(doIOP2Xpatch && memcmp(decbuf+i,iop2x_ori,sizeof(iop2x_ori)) == 0)
 		{
 			printf("Patched LT_IOP2X at %x\n", i);
 			memcpy(decbuf+i,iop2x_patch,sizeof(iop2x_patch));
-			cnt++; p|=2;
+			cnt++; p|=4;
 		}
 	}
-	if(cnt != 2 || p != 3)
+	if((doIOP2Xpatch && (cnt != 3 || p != 7)) || (!doIOP2Xpatch && (cnt != 2 || p != 3)))
 		puts("WARNING: Did not apply c2w.img patches as expected!");
 	//technically this has IV but its not needed for our patches
 	aes_set_key(key);
