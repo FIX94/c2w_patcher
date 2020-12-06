@@ -9,7 +9,10 @@
 #include <stdbool.h>
 #include <inttypes.h>
 #include <string.h>
-#include <malloc.h>
+#ifndef __APPLE__
+	#include <malloc.h>
+#endif
+
 #include "rijndael.h"
 #include "sha1.h"
 
